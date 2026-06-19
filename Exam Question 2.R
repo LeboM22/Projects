@@ -1,139 +1,213 @@
-# Load necessary libraries
-library(readr)
-library(ggplot2)
-library(dplyr)
+###################################################
+# QUESTION 2.1
+# KDE FROM FIRST PRINCIPLES
+# KS-CV USING KDE CDF
+###################################################
+
 library(readxl)
-
-
-# Read the data
-data <- read_excel("C:\\Users\\lebom\\OneDrive\\Documents\\Masters\\MVA 880\\Exam 2026\\randmixa.xlsx")
-
+library(ggplot2)
 
 ###################################################
-# QUESTION 2.1 KERNEL DENSITY ESTIMATION (FIRST PRINCIPLES)
+# DATA
 ###################################################
 
-# Data
+data <- read_excel(
+  "C:/Users/lebom/OneDrive/Documents/Masters/MVA 880/Exam 2026/randmixa.xlsx"
+)
+
 X <- data$X
 n <- length(X)
 
 ###################################################
-# 1. Gaussian Kernel Function (FIRST PRINCIPLES)
+# GAUSSIAN KERNEL
 ###################################################
 
-gaussian_kernel <- function(u) {
-  (1 / sqrt(2 * pi)) * exp(-0.5 * u^2)
+gaussian_kernel <- function(u){
+  dnorm(u)
 }
 
 ###################################################
-# 2. KDE function (first principles estimator)
+# KDE DENSITY
 ###################################################
 
-kde_estimate <- function(x_grid, data, h) {
-  n <- length(data)
+kde_density <- function(x_eval, data, h){
   
-  sapply(x_grid, function(x) {
-    mean(gaussian_kernel((x - data) / h)) / h
+  sapply(x_eval, function(x){
+    
+    mean(
+      gaussian_kernel((x-data)/h)
+    )/h
+    
   })
+  
 }
 
 ###################################################
-# 3. KDE CDF (numerical integration approximation)
+# KDE CDF
 ###################################################
 
-kde_cdf <- function(x_grid, kde_values, x) {
-  # interpolate KDE then integrate numerically
-  dx <- diff(x_grid)
-  cdf_vals <- cumsum(c(0, head(kde_values, -1) + diff(c(0, kde_values))/2 * dx))
+kde_cdf <- function(grid, density_vals){
   
-  # normalize
-  cdf_vals <- cdf_vals / max(cdf_vals)
+  dx <- diff(grid)
   
-  approx(x_grid, cdf_vals, xout = x)$y
+  cdf <- c(
+    0,
+    cumsum(
+      (head(density_vals,-1) +
+         tail(density_vals,-1))/2 * dx
+    )
+  )
+  
+  cdf / max(cdf)
+  
 }
 
 ###################################################
-# 4. Empirical CDF
+# BANDWIDTH GRID
 ###################################################
 
-F_emp <- ecdf(X)
+h_grid <- seq(0.1,5,length.out=40)
 
 ###################################################
-# 5. KS statistic for given bandwidth h
+# 10-FOLD CV
 ###################################################
 
-ks_for_h <- function(h, x_grid) {
-  
-  kde_vals <- kde_estimate(x_grid, X, h)
-  
-  F_kde <- function(x) kde_cdf(x_grid, kde_vals, x)
-  
-  # evaluate KS on grid
-  ks_vals <- abs(F_emp(x_grid) - F_kde(x_grid))
-  
-  max(ks_vals)
-}
+Kfold <- 10
 
-###################################################
-# 6. Cross-validation grid for bandwidth h
-###################################################
+set.seed(123)
 
-h_grid <- seq(0.1, 5, length.out = 40)
+folds <- sample(
+  rep(1:Kfold,length.out=n)
+)
 
 ks_values <- numeric(length(h_grid))
 
-x_grid <- seq(min(X) - 3, max(X) + 3, length.out = 300)
-
 ###################################################
-# 7. K-fold cross-validation (first principles)
+# CV LOOP
 ###################################################
 
-K <- 10
-set.seed(123)
-
-folds <- sample(rep(1:K, length.out = n))
-
-for (i in seq_along(h_grid)) {
+for(i in seq_along(h_grid)){
   
   h <- h_grid[i]
-  fold_ks <- numeric(K)
   
-  for (k in 1:K) {
+  fold_ks <- numeric(Kfold)
+  
+  for(k in 1:Kfold){
     
     train <- X[folds != k]
     test  <- X[folds == k]
     
-    # KDE on training set
-    kde_train <- function(x) {
-      mean(gaussian_kernel((x - train) / h)) / h
-    }
+    #################################################
+    # KDE ON TRAINING DATA
+    #################################################
     
-    # CDF approximation on test grid
-    test_grid <- sort(test)
+    grid <- seq(
+      min(train)-3*h,
+      max(train)+3*h,
+      length.out = 500
+    )
     
-    F_train <- function(x) {
-      sapply(x, function(z) {
-        mean(sapply(train, function(t) gaussian_kernel((z - t) / h))) / h
-      })
-    }
+    dens_train <- kde_density(
+      grid,
+      train,
+      h
+    )
     
-    ks_vals <- abs(ecdf(test)(test_grid) - F_train(test_grid))
+    cdf_train <- kde_cdf(
+      grid,
+      dens_train
+    )
     
-    fold_ks[k] <- max(ks_vals)
+    #################################################
+    # KDE-CDF AT TEST POINTS
+    #################################################
+    
+    kde_cdf_test <- approx(
+      x = grid,
+      y = cdf_train,
+      xout = sort(test),
+      rule = 2
+    )$y
+    
+    #################################################
+    # TEST EMPIRICAL CDF
+    #################################################
+    
+    F_test <- ecdf(test)
+    
+    emp_test <- F_test(sort(test))
+    
+    #################################################
+    # KS
+    #################################################
+    
+    fold_ks[k] <- max(
+      abs(emp_test - kde_cdf_test)
+    )
   }
   
   ks_values[i] <- mean(fold_ks)
 }
 
 ###################################################
-# 8. Optimal bandwidth
+# BEST BANDWIDTH
 ###################################################
 
-best_h <- 1 #h_grid[which.min(ks_values)]
+best_h <- h_grid[
+  which.min(ks_values)
+]
 
-cat("Optimal bandwidth (h):", best_h, "\n")
+cat(
+  "Optimal bandwidth =",
+  best_h,
+  "\n"
+)
 
+###################################################
+# PLOT
+###################################################
 
+df_h <- data.frame(
+  h = h_grid,
+  KS = ks_values
+)
+
+ggplot(df_h,
+       aes(h,KS))+
+  
+  geom_line(
+    linewidth=1
+  )+
+  
+  geom_point(
+    size=2
+  )+
+  
+  geom_vline(
+    xintercept = best_h,
+    colour = "red",
+    linetype = "dashed"
+  )+
+  
+  annotate(
+    "text",
+    x = best_h,
+    y = max(ks_values),
+    label = paste0(
+      "h = ",
+      round(best_h,2)
+    ),
+    colour = "red",
+    hjust = -0.1
+  )+
+  
+  labs(
+    title = "10-Fold CV: KS Statistic vs Bandwidth",
+    x = "Bandwidth (h)",
+    y = "Average Out-of-Sample KS"
+  )+
+  
+  theme_minimal()
 
 
 
@@ -249,7 +323,7 @@ x <- data$X  # <-- replace this
 # ----------------------------
 # 2. Fit KDE with optimal bandwidth
 # ----------------------------
-h_opt <- 1  # given from your CV
+h_opt <- best_h  # given from your CV
 
 kde <- density(x, bw = h_opt, kernel = "gaussian")
 
@@ -286,52 +360,52 @@ lines(kde, lwd = 2)
 
 
 
-
-
-
 ###################################################
+# QUESTION 2.5 (MODE-SEEKING CLUSTERING USING KDE)
 ###################################################
-# QUESTION 2.5
-###################################################
-# Data
+
 x <- X
+h <- 1  # bandwidth from Q2.1
 
-# Optimal bandwidth from Question 2.1
-h <- 1
-
-# KDE
+# -----------------------------
+# 1. KDE ESTIMATION (from Q2.1)
+# -----------------------------
 kde <- density(x,
                bw = h,
                kernel = "gaussian",
                n = 2048)
 
-# Local maxima
-
-modes_index <- which(
-  diff(sign(diff(kde$y))) == -2
-) + 1
-
+# -----------------------------
+# 2. IDENTIFY KDE MODES
+# -----------------------------
+modes_index <- which(diff(sign(diff(kde$y))) == -2) + 1
 modes <- kde$x[modes_index]
 
-cat("Modes:\n")
+cat("Estimated KDE modes:\n")
 print(modes)
 
+# -----------------------------
+# 3. VISUALISE KDE + MODES
+# -----------------------------
 plot(kde,
-     main="Kernel Density Estimate \n(with Modes)",
-     xlab="X",
-     ylab="Density",
-     lwd=2)
+     main = "Kernel Density Estimate with Modes",
+     xlab = "X",
+     ylab = "Density",
+     lwd = 2)
 
-abline(v=modes,
-       col="red",
-       lty=2,
-       lwd=2)
+abline(v = modes,
+       col = "red",
+       lty = 2,
+       lwd = 2)
 
 points(modes,
        kde$y[modes_index],
-       pch=19,
-       col="red")
+       pch = 19,
+       col = "red")
 
+# -----------------------------
+# 4. MEAN-SHIFT (MODE-SEEKING STEP)
+# -----------------------------
 mean_shift <- function(x0, data, h,
                        tol = 1e-6,
                        max_iter = 100){
@@ -341,9 +415,7 @@ mean_shift <- function(x0, data, h,
   for(iter in 1:max_iter){
     
     weights <- dnorm((x_current - data)/h)
-    
-    x_new <- sum(weights * data) /
-      sum(weights)
+    x_new <- sum(weights * data) / sum(weights)
     
     if(abs(x_new - x_current) < tol)
       break
@@ -359,47 +431,76 @@ mode_destination <- sapply(x,
                            data = x,
                            h = h)
 
-head(mode_destination)
+# -----------------------------
+# 5. ASSIGN EACH POINT TO NEAREST KDE MODE
+# -----------------------------
+assign_mode <- function(val, modes){
+  which.min(abs(val - modes))
+}
 
-cluster_modes <- round(mode_destination, 3)
+cluster_id <- sapply(mode_destination,
+                     assign_mode,
+                     modes = modes)
 
-cluster_id <- as.numeric(
-  factor(cluster_modes)
+cluster_id <- as.factor(cluster_id)
+
+# -----------------------------
+# 6. CLUSTER SUMMARY (REQUIRED FOR REPRESENTATION)
+# -----------------------------
+cluster_summary <- aggregate(
+  X ~ cluster_id,
+  data = data.frame(X = x, cluster_id = cluster_id),
+  FUN = function(z) c(
+    Size = length(z),
+    Mean = mean(z),
+    SD = sd(z)
+  )
 )
 
+cluster_summary <- do.call(data.frame, cluster_summary)
+colnames(cluster_summary) <- c("Cluster", "Size", "Mean", "SD")
+
+cat("\nCluster Summary:\n")
+print(cluster_summary)
+
+# -----------------------------
+# 7. CLUSTERING VISUALISATION (FINAL REPRESENTATION)
+# -----------------------------
+plot(x,
+     rep(0, length(x)),
+     col = cluster_id,
+     pch = 19,
+     xlab = "X",
+     ylab = "",
+     main = "Mode-Seeking Clustering based on KDE")
+
+# KDE mode locations (final cluster representatives)
+abline(v = modes,
+       col = "red",
+       lwd = 2,
+       lty = 2)
+
+points(modes,
+       rep(0, length(modes)),
+       pch = 8,
+       col = "red",
+       cex = 1.5)
+
+# Legend
+legend("bottomright",
+       legend = c("KDE Modes (Clusters)"),
+       col = c("black", "red"),
+       pch = c(19, 8),
+       lty = c(NA, 2),
+       bty = "n")
+
+# -----------------------------
+# 8. CLUSTER FREQUENCY TABLE
+# -----------------------------
 table(cluster_id)
 
-results <- data.frame(
-  Observation = 1:length(x),
-  X = x,
-  Cluster = cluster_id,
-  Mode = cluster_modes
-)
 
-head(results)
 
-plot(x,
-     rep(0,length(x)),
-     col=cluster_id,
-     pch=19,
-     xlab="X",
-     ylab="",
-     main="Mode-Seeking Clustering")
-
-abline(v=unique(cluster_modes),
-       col="black",
-       lwd=2,
-       lty=2)
-
-aggregate(X ~ Cluster,
-          data=data.frame(
-            X=x,
-            Cluster=cluster_id
-          ),
-          FUN=function(z)
-            c(Size=length(z),
-              Mean=mean(z),
-              SD=sd(z)))
 
 
 
