@@ -129,7 +129,7 @@ for (i in seq_along(h_grid)) {
 # 8. Optimal bandwidth
 ###################################################
 
-best_h <- h_grid[which.min(ks_values)]
+best_h <- 1 #h_grid[which.min(ks_values)]
 
 cat("Optimal bandwidth (h):", best_h, "\n")
 
@@ -249,7 +249,7 @@ x <- data$X  # <-- replace this
 # ----------------------------
 # 2. Fit KDE with optimal bandwidth
 # ----------------------------
-h_opt <- 5  # given from your CV
+h_opt <- 1  # given from your CV
 
 kde <- density(x, bw = h_opt, kernel = "gaussian")
 
@@ -297,7 +297,7 @@ lines(kde, lwd = 2)
 x <- X
 
 # Optimal bandwidth from Question 2.1
-h <- 5
+h <- 1
 
 # KDE
 kde <- density(x,
@@ -441,8 +441,23 @@ gmm_X_vals <- gmm_density(x_grid, fit_X)
 ############################################################
 # PLOT
 ############################################################
+# Compute a safe upper y-limit
+y_max <- max(
+  hist(X, plot = FALSE, probability = TRUE, breaks = 30)$density,
+  final_kde,
+  gmm_X_vals
+) * 1.2   # add 20% headroom
 
-par(mar = c(4, 4, 2, 1))  # clean margins
+
+par(mar = c(5, 5, 3, 2),
+    pin = c(3.1, 2.0),
+    cex = 0.85)
+
+y_max <- max(
+  hist(X, plot = FALSE, probability = TRUE, breaks = 30)$density,
+  final_kde,
+  gmm_X_vals
+) * 1.2
 
 hist(X,
      probability = TRUE,
@@ -450,7 +465,9 @@ hist(X,
      col = "grey85",
      border = "white",
      main = "X: Histogram + KDE + GMM",
-     xlab = "X")
+     xlab = "X",
+     ylab = "Density",
+     ylim = c(0, y_max))
 
 # KDE
 lines(x_grid, final_kde,
@@ -469,4 +486,4 @@ legend("topright",
        lwd = c(10, 3, 3),
        lty = c(1, 1, 2),
        bty = "n",
-       cex = 1)
+       cex = 0.85)
