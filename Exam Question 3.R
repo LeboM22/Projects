@@ -17,7 +17,9 @@ Y <- data$y
 n <- length(Y)
 
 ############################################################
-# 1. POLYNOMIAL DESIGN MATRIX (FIRST PRINCIPLES)
+############################################################
+# 3.1 POLYNOMIAL DESIGN MATRIX (FIRST PRINCIPLES)
+############################################################
 ############################################################
 
 poly_design <- function(x, degree) {
@@ -335,9 +337,10 @@ for (k in 1:best$K) {
 
 
 
-
+############################################################
 ############################################################
 # 3.2 SHANNON ENTROPY UNCERTAINTY ANALYSIS (FINAL CLEAN)
+############################################################
 ############################################################
 library(ggplot2)
 library(tidyr)
@@ -568,9 +571,10 @@ ggplot() +
 
 
 
-
+############################################################
 ############################################################
 # 3.3 R-SQUARED FOR GMR (CORRECT FIRST PRINCIPLES)
+############################################################
 ############################################################
 
 # Design matrix (must match model)
@@ -609,113 +613,62 @@ cat("Corrected GMR R-squared:", R2, "\n")
 
 
 
-
+############################################################
 ############################################################
 # 3.4 BOOTSTRAP 95% CI FOR R^2 (FIXED FIRST PRINCIPLES)
 ############################################################
-
+############################################################
 set.seed(123)
 
 B <- 200
+
+bootstrap_R2 <- numeric(B)
+
 n <- length(Y)
 
-bootstrap_R2 <- numeric(0)
-
-for (b in 1:B) {
+for(b in 1:B){
   
-  ########################################################
-  # Step 1: bootstrap sample
-  ########################################################
+  idx <- sample(
+    1:n,
+    size = n,
+    replace = TRUE
+  )
   
-  idx <- sample(1:n, size = n, replace = TRUE)
-  
-  X_b <- X[idx]
   Y_b <- Y[idx]
+  Yhat_b <- y_hat[idx]
   
-  ########################################################
-  # Step 2: fit GMR model with RANDOM initialization
-  ########################################################
+  SST_b <- sum(
+    (Y_b - mean(Y_b))^2
+  )
   
-  fit_b <- tryCatch({
-    
-    # IMPORTANT: refit model
-    gmr_em(X_b, Y_b, best$K, best$degree)
-    
-  }, error = function(e) NULL)
+  SSE_b <- sum(
+    (Y_b - Yhat_b)^2
+  )
   
-  if (is.null(fit_b)) next
-  
-  ########################################################
-  # Step 3: design matrix
-  ########################################################
-  
-  Xmat_b <- poly_design(X_b, best$degree)
-  
-  gamma_b <- fit_b$gamma
-  beta_b <- fit_b$beta
-  
-  K <- best$K
-  n_b <- length(Y_b)
-  
-  ########################################################
-  # Step 4: compute component means
-  ########################################################
-  
-  mu_mat_b <- matrix(0, nrow = n_b, ncol = K)
-  
-  for (k in 1:K) {
-    mu_mat_b[, k] <- as.vector(Xmat_b %*% beta_b[[k]])
-  }
-  
-  ########################################################
-  # Step 5: GMR prediction (first principles)
-  ########################################################
-  
-  y_hat_b <- rowSums(gamma_b * mu_mat_b)
-  
-  ########################################################
-  # Step 6: compute R^2
-  ########################################################
-  
-  y_bar_b <- mean(Y_b)
-  
-  SST_b <- sum((Y_b - y_bar_b)^2)
-  SSE_b <- sum((Y_b - y_hat_b)^2)
-  
-  R2_b <- 1 - SSE_b / SST_b
-  
-  ########################################################
-  # Step 7: store ONLY valid values
-  ########################################################
-  
-  if (is.finite(R2_b)) {
-    bootstrap_R2 <- c(bootstrap_R2, R2_b)
-  }
+  bootstrap_R2[b] <- 1 - SSE_b/SST_b
 }
 
 ############################################################
-# SAFETY CHECK
+# CONFIDENCE INTERVAL
 ############################################################
 
-cat("Valid bootstrap samples:", length(bootstrap_R2), "\n")
+CI_lower <- quantile(
+  bootstrap_R2,
+  0.025
+)
 
-summary(bootstrap_R2)
-sd(bootstrap_R2)
+CI_upper <- quantile(
+  bootstrap_R2,
+  0.975
+)
 
-############################################################
-# 95% CONFIDENCE INTERVAL
-############################################################
-
-CI_lower <- quantile(bootstrap_R2, 0.025)
-CI_upper <- quantile(bootstrap_R2, 0.975)
-
-cat("\nBootstrap 95% CI for R2:\n")
-cat("Lower bound:", CI_lower, "\n")
-cat("Upper bound:", CI_upper, "\n")
+cat("95% CI for R²:\n")
+cat("Lower =", CI_lower, "\n")
+cat("Upper =", CI_upper, "\n")
 
 
 ############################################################
-# BOOTSTRAP DISTRIBUTION PLOT FOR R^2
+# HISTOGRAM OF BOOTSTRAP R² (3 DECIMAL AXIS LABELS)
 ############################################################
 
 library(ggplot2)
@@ -730,18 +683,49 @@ ggplot(df_boot, aes(x = R2)) +
     color = "white"
   ) +
   
+  # Lower CI
   geom_vline(
-    xintercept = quantile(bootstrap_R2, 0.025),
-    color = "red",
+    xintercept = CI_lower,
+    color = "blue",
     linetype = "dashed",
     linewidth = 1.1
   ) +
   
+  # Upper CI
   geom_vline(
-    xintercept = quantile(bootstrap_R2, 0.975),
-    color = "red",
+    xintercept = CI_upper,
+    color = "green",
     linetype = "dashed",
     linewidth = 1.1
+  ) +
+  
+  # Observed R²
+  geom_vline(
+    xintercept = R2,
+    color = "red",
+    linewidth = 1.3
+  ) +
+  
+  annotate(
+    "text",
+    x = R2,
+    y = Inf,
+    label = paste0("Observed R² = ", round(R2, 3)),
+    color = "red",
+    hjust = 1.1,
+    vjust = 2,
+    angle = 90
+  ) +
+  
+  # X-axis with 3 decimal formatting
+  scale_x_continuous(
+    breaks = round(
+      sort(unique(c(
+        pretty(df_boot$R2, 6),
+        R2
+      ))),
+      3
+    )
   ) +
   
   labs(
