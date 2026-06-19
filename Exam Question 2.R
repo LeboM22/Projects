@@ -408,77 +408,41 @@ aggregate(X ~ Cluster,
 ########  FOR COMAPRISON IN Q2.6
 # 1. HARD CLUSTERING FUNCTION (from fitted GMM)
 ###################################################
+############################################################
+# GMM DENSITY CURVE (FIRST PRINCIPLES)
+############################################################
 
-hard_cluster_gmm <- function(data, fit, K) {
+# function to compute Gaussian mixture density on grid
+gmm_density <- function(x_grid, fit) {
   
-  n <- length(data)
+  K <- length(fit$pi)
+  n_grid <- length(x_grid)
   
-  ###################################################
-  # Step 1: Compute responsibilities
-  ###################################################
-  
-  responsibilities <- matrix(0, nrow = n, ncol = K)
+  dens <- numeric(n_grid)
   
   for (k in 1:K) {
-    responsibilities[, k] <- fit$pi[k] * dnorm(
-      data,
+    
+    dens <- dens + fit$pi[k] * dnorm(
+      x_grid,
       mean = fit$mu[k],
       sd = fit$sigma[k]
     )
   }
   
-  responsibilities <- responsibilities / rowSums(responsibilities)
-  
-  ###################################################
-  # Step 2: Hard cluster assignment
-  ###################################################
-  
-  hard_cluster <- apply(responsibilities, 1, which.max)
-  
-  ###################################################
-  # Step 3: Re-estimate parameters from hard clusters
-  ###################################################
-  
-  hard_pi <- as.numeric(table(hard_cluster) / n)
-  
-  hard_mu <- tapply(data, hard_cluster, mean)
-  hard_sigma <- tapply(data, hard_cluster, sd)
-  
-  ###################################################
-  # Step 4: Organise results
-  ###################################################
-  
-  hard_estimates <- data.frame(
-    Component = 1:K,
-    PI_hard = round(hard_pi, 4),
-    mu_hard = round(hard_mu, 4),
-    sigma_hard = round(hard_sigma, 4)
-  )
-  
-  em_estimates <- data.frame(
-    Component = 1:K,
-    PI_EM = round(fit$pi, 4),
-    mu_EM = round(as.numeric(fit$mu), 4),
-    sigma_EM = round(fit$sigma, 4)
-  )
-  
-  comparison <- merge(hard_estimates, em_estimates, by = "Component")
-  
-  return(list(
-    hard_cluster = hard_cluster,
-    comparison = comparison
-  ))
+  return(dens)
 }
 
-###################################################
-# 2. APPLY TO X AND Y (USING K = 3 FITS)
-###################################################
+############################################################
+# COMPUTE GMM CURVE FOR X
+############################################################
 
-K_final <- 3
+gmm_X_vals <- gmm_density(x_grid, fit_X)
 
-hard_X <- hard_cluster_gmm(X, fit_X, K_final)
-hard_Y <- hard_cluster_gmm(Y, fit_Y, K_final)
-par(mar = c(4, 4, 2, 1))  # minimal margins (THIS is the key)
+############################################################
+# PLOT
+############################################################
+
+par(mar = c(4, 4, 2, 1))  # clean margins
 
 hist(X,
      probability = TRUE,
@@ -488,10 +452,12 @@ hist(X,
      main = "X: Histogram + KDE + GMM",
      xlab = "X")
 
+# KDE
 lines(x_grid, final_kde,
       col = "blue",
       lwd = 3)
 
+# GMM (EM)
 lines(x_grid, gmm_X_vals,
       col = "red",
       lwd = 3,
